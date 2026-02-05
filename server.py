@@ -134,11 +134,18 @@ def _make_image_url(path_str: str) -> str:
     """
     try:
         p = Path(path_str).expanduser().resolve()
-        rel = p.relative_to(IMAGE_DIR.resolve())
+        image_dir_resolved = IMAGE_DIR.resolve()
+        rel = p.relative_to(image_dir_resolved)
         # 使用 os.path.normpath 确保跨平台兼容性，然后替换为正斜杠
         normalized_rel = os.path.normpath(str(rel))
         return "/images/" + normalized_rel.replace("\\", "/")
-    except Exception:
+    except ValueError:
+        # relative_to 抛出 ValueError 表示路径不在 IMAGE_DIR 下
+        print(f"警告: 图片路径不在 IMAGE_DIR 目录下: {path_str} (IMAGE_DIR: {IMAGE_DIR})")
+        return ""
+    except Exception as e:
+        # 其他异常
+        print(f"处理图片路径时出错: {e}, 路径: {path_str}")
         return ""
 
 
@@ -150,7 +157,8 @@ def _make_image_url(path_str: str) -> str:
 def load_rows(page: int = 1, page_size: int = REVIEW_PAGE_SIZE, md: str = "", sort: str = "memory", month: str = "", day: str = ""):
     """分页读取 review 数据。支持按 MM-DD、月份或日期过滤与排序。返回 (rows, total_count)."""
     if not DB_PATH.exists():
-        raise SystemExit(f"找不到数据库文件: {DB_PATH}")
+        print(f"警告: 找不到数据库文件: {DB_PATH}")
+        return [], 0
 
     if page < 1:
         page = 1
@@ -248,7 +256,8 @@ def load_rows(page: int = 1, page_size: int = REVIEW_PAGE_SIZE, md: str = "", so
 
 def load_sim_rows():
     if not DB_PATH.exists():
-        raise SystemExit(f"找不到数据库文件: {DB_PATH}")
+        print(f"警告: 找不到数据库文件: {DB_PATH}")
+        return []
 
     conn = sqlite3.connect(DB_PATH)
     c = conn.cursor()
@@ -284,7 +293,8 @@ def load_sim_rows_for_dates(dates: list[str]):
     if not dates:
         return []
     if not DB_PATH.exists():
-        raise SystemExit(f"找不到数据库文件: {DB_PATH}")
+        print(f"警告: 找不到数据库文件: {DB_PATH}")
+        return []
 
     # 过滤掉不合法日期字符串，避免 SQL 注入（虽然我们用参数化，但也别喂垃圾）
     safe_dates = []
@@ -334,6 +344,7 @@ def get_photo_meta_by_path(abs_path: str):
     abs_path 必须是数据库里 photo_scores.path 的原值（通常是绝对路径）。
     """
     if not DB_PATH.exists():
+        print(f"警告: 找不到数据库文件: {DB_PATH}")
         return None
 
     conn = sqlite3.connect(DB_PATH)
@@ -2177,15 +2188,33 @@ def review():
     day = (request.args.get('day', '') or '').strip()
     sort = (request.args.get('sort', '') or 'memory').strip() or 'memory'
 
-    rows, total_count = load_rows(page=page, page_size=REVIEW_PAGE_SIZE, md=md, sort=sort, month=month, day=day)
-    if not rows:
+    try:
+        rows, total_count = load_rows(page=page, page_size=REVIEW_PAGE_SIZE, md=md, sort=sort, month=month, day=day)
+    except Exception as e:
+        print(f"加载数据库行时出错: {e}")
+        return Response(
+            "数据库访问错误。请检查数据库文件是否存在并可访问。",
+            status=500,
+            mimetype="text/plain; charset=utf-8",
+        )
+
+    if not rows and total_count == 0:
         return Response(
             "数据库里没有可展示的数据。请先运行你的分析脚本生成评分与文案。",
             status=404,
             mimetype="text/plain; charset=utf-8",
         )
 
-    html_str = build_html(rows, page=page, page_size=REVIEW_PAGE_SIZE, total_count=total_count)
+    try:
+        html_str = build_html(rows, page=page, page_size=REVIEW_PAGE_SIZE, total_count=total_count)
+    except Exception as e:
+        print(f"构建HTML时出错: {e}")
+        return Response(
+            "页面生成错误。",
+            status=500,
+            mimetype="text/plain; charset=utf-8",
+        )
+        
     return Response(html_str, mimetype="text/html; charset=utf-8")
 
 
