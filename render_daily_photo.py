@@ -38,11 +38,8 @@ if str(FONT_PATH) and not FONT_PATH.is_absolute():
     FONT_PATH = (ROOT_DIR / FONT_PATH).resolve()
 
 
-def find_system_chinese_font() -> Optional[Path]:
-    """尝试在系统字体目录中寻找常见的中文字体（Windows / macOS / Linux）。
-    优先查找楷体字体。
-    返回找到的字体路径或 None。
-    """
+def find_kai_font() -> Optional[Path]:
+    """专门查找楷体字体的函数"""
     import platform
     import subprocess
     system = platform.system().lower()
@@ -50,9 +47,133 @@ def find_system_chinese_font() -> Optional[Path]:
     candidates = []
     
     if system == "windows":
-        # Windows 常见字体，优先查找楷体
+        # Windows 楷体字体
         candidates += [
-            r"C:\Windows\Fonts\simkai.ttf",  # 楷体 - 优先
+            r"C:\Windows\Fonts\simkai.ttf",  # 楷体
+            r"C:\Windows\Fonts\kaiu.ttf",
+            r"C:\Windows\Fonts\KAIU.TTF",
+        ]
+    elif system == "linux":
+        # Linux 楷体字体，优先使用 fc-list 查找
+        try:
+            # 专门查找楷体
+            result = subprocess.run(['fc-list', ':family=Kai', ':lang=zh'], stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True)
+            if result.returncode != 0 or not result.stdout.strip():
+                # 如果没找到 Kai，尝试楷体的其他名称
+                result = subprocess.run(['fc-list', ':family=Kaiti', ':lang=zh'], stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True)
+            if result.returncode == 0 and result.stdout.strip():
+                font_lines = result.stdout.strip().split('\n')
+                for line in font_lines:
+                    if line:
+                        parts = line.split(':')
+                        if parts and parts[0]:  # 提取字体路径
+                            font_path = parts[0].strip()
+                            if font_path and Path(font_path).exists():
+                                print(f"[INFO] 通过 fc-list 找到楷体字体: {font_path}")
+                                return Path(font_path)
+        except (subprocess.SubprocessError, FileNotFoundError):
+            pass
+            
+        # Linux 楷体字体路径
+        candidates += [
+            "/usr/share/fonts/truetype/arphic/gkai00mp.ttf",      # AR PL 楷体
+            "/usr/share/fonts/truetype/arphic/bsmi00lp.ttf",      # AR PL 仿宋
+            "/usr/share/fonts/truetype/arphic/gbsn00lp.ttf",      # AR PL 报宋
+            "/usr/share/fonts/truetype/arphic/ukai.ttc",          # AR PL ukai
+        ]
+        
+        # 使用 glob 搜索楷体字体
+        import glob
+        possible_paths = [
+            "/usr/share/fonts/**/*kai*.ttf",    # 楷体
+            "/usr/share/fonts/**/*kai*.ttc",    # 楷体
+            "/usr/share/fonts/**/*Kai*.ttf",    # 楷体
+            "/usr/share/fonts/**/*Kai*.ttc",    # 楷体
+            "/usr/share/fonts/**/*kaiti*.ttf",  # 楷体
+            "/usr/share/fonts/**/*kaiti*.ttc",  # 楷体
+            "/usr/share/fonts/**/*Kaiti*.ttf",  # 楷体
+            "/usr/share/fonts/**/*Kaiti*.ttc",  # 楷体
+        ]
+        
+        for pattern in possible_paths:
+            try:
+                matches = glob.glob(pattern, recursive=True)
+                for match in matches:
+                    if Path(match).exists():
+                        print(f"[INFO] 找到可能的楷体字体: {match}")
+                        return Path(match)
+            except Exception:
+                continue
+                
+    elif system == "darwin":  # macOS
+        candidates += [
+            "/Library/Fonts/STKaiti.ttc",                  # 华文楷体
+            "/System/Library/Fonts/PingFang.ttc",          # 苹方（虽然不是楷体，但比较接近）
+        ]
+    
+    # 遍历候选路径
+    for p in candidates:
+        try:
+            pp = Path(p)
+            if pp.exists():
+                print(f"[INFO] 找到楷体字体文件: {pp}")
+                return pp
+        except Exception as e:
+            print(f"[DEBUG] 检查楷体字体路径失败 {p}: {e}")
+            continue
+    
+    # 尝试使用系统字体查找功能
+    try:
+        from PIL import ImageFont
+        # 尝试加载楷体字体名称
+        kai_fonts = [
+            "Kai",                    # 楷体
+            "Kaiti",                  # 楷体
+            "KaiTi",                  # 楷体
+            "AR PL KaitiM GB",        # 楷体
+            "AR PL KaitiM Big5",      # 楷体
+        ]
+        for font_name in kai_fonts:
+            try:
+                # 尝试直接使用字体名称（PIL 会自动查找系统字体）
+                font = ImageFont.truetype(font_name, 16)
+                # 如果成功加载，尝试获取一个中文字符的尺寸
+                bbox = font.getbbox("测试")  # 使用 getbbox 替代已废弃的 getsize
+                if bbox:  # 如果能成功获取边界框，说明字体有效
+                    print(f"[INFO] 通过字体名称找到楷体: {font_name}")
+                    return Path(font_name)  # 返回字体名称作为路径
+            except Exception as e:
+                print(f"[DEBUG] 尝试楷体字体名称失败 {font_name}: {e}")
+                continue
+    except Exception as e:
+        print(f"[DEBUG] 楷体字体名称查找功能异常: {e}")
+        pass
+        
+    print("[WARNING] 未找到合适的楷体字体")
+    return None
+
+
+def find_system_chinese_font() -> Optional[Path]:
+    """尝试在系统字体目录中寻找常见的中文字体（Windows / macOS / Linux）。
+    优先查找楷体字体。
+    返回找到的字体路径或 None。
+    """
+    # 首先尝试查找楷体
+    kai_font = find_kai_font()
+    if kai_font:
+        return kai_font
+    
+    # 如果没找到楷体，再查找其他中文字体
+    import platform
+    import subprocess
+    system = platform.system().lower()
+    
+    candidates = []
+    
+    if system == "windows":
+        # Windows 常见字体
+        candidates += [
+            r"C:\Windows\Fonts\simkai.ttf",  # 楷体 - 已经在 find_kai_font 中查找过了
             r"C:\Windows\Fonts\kaiu.ttf",    # 楷体
             r"C:\Windows\Fonts\KAIU.TTF",    # 楷体
             r"C:\Windows\Fonts\msyh.ttc",    # 微软雅黑
@@ -62,18 +183,10 @@ def find_system_chinese_font() -> Optional[Path]:
             r"C:\Windows\Fonts\simsun.ttf",
         ]
     elif system == "linux":
-        # Linux 常见字体，优先查找楷体
-        # 首先尝试使用 fc-list 命令查找楷体字体
+        # Linux 常见字体
+        # 首先尝试使用 fc-list 命令查找中文字体
         try:
-            # 优先查找楷体
-            result = subprocess.run(['fc-list', ':family=Kai', ':lang=zh'], stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True)
-            if result.returncode != 0 or not result.stdout.strip():
-                # 如果没找到 Kai，尝试楷体的其他名称
-                result = subprocess.run(['fc-list', ':family=Kaiti', ':lang=zh'], stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True)
-            if result.returncode != 0 or not result.stdout.strip():
-                # 如果没找到 Kaiti，尝试所有中文字体
-                result = subprocess.run(['fc-list', ':lang=zh'], stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True)
-                
+            result = subprocess.run(['fc-list', ':lang=zh'], stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True)
             if result.returncode == 0 and result.stdout.strip():
                 font_lines = result.stdout.strip().split('\n')
                 for line in font_lines:
@@ -88,26 +201,18 @@ def find_system_chinese_font() -> Optional[Path]:
             # 如果 fc-list 不可用，回退到硬编码路径
             pass
             
-        # Linux 常见字体路径，优先查找楷体
+        # Linux 常见字体路径
         candidates += [
             "/usr/share/fonts/truetype/noto/NotoSansCJK-Regular.ttc",  # 通用 CJK 字体
-            "/usr/share/fonts/truetype/wqy/wqy-zenhei.ttc",           # 文泉驿正黑（接近楷体）
+            "/usr/share/fonts/truetype/wqy/wqy-zenhei.ttc",           # 文泉驿正黑
             "/usr/share/fonts/truetype/wqy/wqy-microhei.ttc",         # 文泉驿微米黑
             "/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf",        # DejaVu 字体
             "/usr/share/fonts/opentype/noto/NotoSansCJK-Regular.ttc", # OpenType 版本
         ]
         
-        # 尝试查找楷体专用字体
+        # 尝试查找其他可能的字体位置
         import glob
         possible_paths = [
-            "/usr/share/fonts/**/*kai*.ttf",    # 楷体
-            "/usr/share/fonts/**/*kai*.ttc",    # 楷体
-            "/usr/share/fonts/**/*Kai*.ttf",    # 楷体
-            "/usr/share/fonts/**/*Kai*.ttc",    # 楷体
-            "/usr/share/fonts/**/*kaiti*.ttf",  # 楷体
-            "/usr/share/fonts/**/*kaiti*.ttc",  # 楷体
-            "/usr/share/fonts/**/*Kaiti*.ttf",  # 楷体
-            "/usr/share/fonts/**/*Kaiti*.ttc",  # 楷体
             "/usr/share/fonts/**/*song*.ttf",   # 宋体
             "/usr/share/fonts/**/*song*.ttc",   # 宋体
             "/usr/share/fonts/**/*hei*.ttf",    # 黑体
@@ -136,7 +241,6 @@ def find_system_chinese_font() -> Optional[Path]:
         candidates += [
             "/System/Library/Fonts/PingFang.ttc",          # 苹方
             "/System/Library/Fonts/Helvetica.ttc",         # Helvetica
-            "/Library/Fonts/STKaiti.ttc",                  # 华文楷体
             "/Library/Fonts/STHeiti Medium.ttc",           # 华文黑体
             "/System/Library/Fonts/STHeiti Medium.ttc",    # 华文黑体
             "/Library/Fonts/NotoSansCJK-Regular.ttc",      # Noto CJK
@@ -153,28 +257,23 @@ def find_system_chinese_font() -> Optional[Path]:
             print(f"[DEBUG] 检查字体路径失败 {p}: {e}")
             continue
     
-    # 如果系统特定路径都没找到，尝试常见字体名称，优先楷体
+    # 如果系统特定路径都没找到，尝试常见字体名称
     try:
         # 尝试使用系统字体查找功能
         from PIL import ImageFont
-        # 尝试加载一些常见的中文字体名称，优先楷体
+        # 尝试加载一些常见的中文字体名称
         common_fonts = [
-            "Kai",                    # 楷体
-            "Kaiti",                  # 楷体
-            "KaiTi",                  # 楷体
-            "AR PL KaitiM GB",        # 楷体
-            "AR PL KaitiM Big5",      # 楷体
-            "Noto Sans CJK SC",       # 通用 CJK
+            "Noto Sans CJK SC", 
             "Noto Sans CJK TC", 
             "Noto Sans CJK JP", 
             "Noto Sans CJK KR", 
-            "Source Han Sans SC",     # 思源黑体
+            "Source Han Sans SC", 
             "Source Han Sans CN", 
-            "WenQuanYi Micro Hei",    # 文泉驿微米黑
-            "WenQuanYi Zen Hei",      # 文泉驿正黑
-            "AR PL UMing",            # 明体
-            "AR PL Sungti",           # 宋体
-            "DejaVu Sans",            # 通用字体
+            "WenQuanYi Micro Hei", 
+            "WenQuanYi Zen Hei", 
+            "AR PL UMing", 
+            "AR PL Sungti", 
+            "DejaVu Sans",  # 通用字体，可能包含基本中文字符
             "Liberation Sans"
         ]
         for font_name in common_fonts:
@@ -664,28 +763,64 @@ def render_image(item: Dict[str, Any]) -> Image.Image:
         font_big = None
         font_small = None
 
-    # 未指定或加载失败时，尝试系统中文字体（优先 simkai）
+    # 未指定或加载失败时，尝试系统中文字体（优先楷体）
     if font_big is None or font_small is None:
-        sys_font = find_system_chinese_font()
-        if sys_font:
+        # 首先尝试查找楷体
+        kai_font = find_kai_font()
+        if kai_font:
             try:
-                font_path_str = str(sys_font)
+                font_path_str = str(kai_font)
                 # 检查是否是字体名称而不是路径
-                if sys_font.exists():  # 如果是实际文件路径
+                if kai_font.exists():  # 如果是实际文件路径
                     font_big = ImageFont.truetype(font_path_str, 48)
                     font_small = ImageFont.truetype(font_path_str, 36)
                 else:  # 如果是字体名称
                     font_big = ImageFont.truetype(font_path_str, 48)
                     font_small = ImageFont.truetype(font_path_str, 36)
-                print(f"[INFO] 使用系统中文字体: {sys_font}")
+                print(f"[INFO] 使用楷体字体: {kai_font}")
             except Exception as e:
-                print(f"[WARNING] 无法加载系统字体: {sys_font}, 错误: {e}")
+                print(f"[WARNING] 无法加载楷体: {kai_font}, 错误: {e}")
+                # 楷体加载失败，尝试其他中文字体
+                sys_font = find_system_chinese_font()
+                if sys_font:
+                    try:
+                        font_path_str = str(sys_font)
+                        if sys_font.exists():  # 如果是实际文件路径
+                            font_big = ImageFont.truetype(font_path_str, 48)
+                            font_small = ImageFont.truetype(font_path_str, 36)
+                        else:  # 如果是字体名称
+                            font_big = ImageFont.truetype(font_path_str, 48)
+                            font_small = ImageFont.truetype(font_path_str, 36)
+                        print(f"[INFO] 使用系统中文字体: {sys_font}")
+                    except Exception as e2:
+                        print(f"[WARNING] 无法加载系统字体: {sys_font}, 错误: {e2}")
+                        font_big = ImageFont.load_default()
+                        font_small = ImageFont.load_default()
+                else:
+                    print("[WARNING] 未找到系统中文字体，使用默认字体")
+                    font_big = ImageFont.load_default()
+                    font_small = ImageFont.load_default()
+        else:
+            # 没有找到楷体，尝试其他中文字体
+            sys_font = find_system_chinese_font()
+            if sys_font:
+                try:
+                    font_path_str = str(sys_font)
+                    if sys_font.exists():  # 如果是实际文件路径
+                        font_big = ImageFont.truetype(font_path_str, 48)
+                        font_small = ImageFont.truetype(font_path_str, 36)
+                    else:  # 如果是字体名称
+                        font_big = ImageFont.truetype(font_path_str, 48)
+                        font_small = ImageFont.truetype(font_path_str, 36)
+                    print(f"[INFO] 使用系统中文字体: {sys_font}")
+                except Exception as e:
+                    print(f"[WARNING] 无法加载系统字体: {sys_font}, 错误: {e}")
+                    font_big = ImageFont.load_default()
+                    font_small = ImageFont.load_default()
+            else:
+                print("[WARNING] 未找到系统中文字体，使用默认字体")
                 font_big = ImageFont.load_default()
                 font_small = ImageFont.load_default()
-        else:
-            print("[WARNING] 未找到系统中文字体，使用默认字体")
-            font_big = ImageFont.load_default()
-            font_small = ImageFont.load_default()
 
     side_text = item.get("side") or ""
 
