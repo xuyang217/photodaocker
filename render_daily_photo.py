@@ -40,38 +40,160 @@ if str(FONT_PATH) and not FONT_PATH.is_absolute():
 
 def find_system_chinese_font() -> Optional[Path]:
     """尝试在系统字体目录中寻找常见的中文字体（Windows / macOS / Linux）。
+    优先查找楷体字体。
     返回找到的字体路径或 None。
     """
+    import platform
+    import subprocess
+    system = platform.system().lower()
+    
     candidates = []
-    # 优先使用 Windows 的楷体（SimKai）
-    candidates += [
-        r"C:\Windows\Fonts\simkai.ttf",  # 楷体
-        r"C:\Windows\Fonts\kaiu.ttf",
-        r"C:\Windows\Fonts\KAIU.TTF",
-    ]
-    # Windows 常见字体
-    candidates += [
-        r"C:\Windows\Fonts\msyh.ttc",  # 微软雅黑
-        r"C:\Windows\Fonts\msyh.ttf",
-        r"C:\Windows\Fonts\simhei.ttf",  # 黑体
-        r"C:\Windows\Fonts\simsun.ttc",  # 宋体集合
-        r"C:\Windows\Fonts\simsun.ttf",
-    ]
-    # macOS / 常见 Noto
-    candidates += [
-        "/Library/Fonts/STHeiti Medium.ttc",
-        "/System/Library/Fonts/STHeiti Medium.ttc",
-        "/Library/Fonts/NotoSansCJK-Regular.ttc",
-        "/usr/share/fonts/truetype/noto/NotoSansCJK-Regular.ttc",
-    ]
-
+    
+    if system == "windows":
+        # Windows 常见字体，优先查找楷体
+        candidates += [
+            r"C:\Windows\Fonts\simkai.ttf",  # 楷体 - 优先
+            r"C:\Windows\Fonts\kaiu.ttf",    # 楷体
+            r"C:\Windows\Fonts\KAIU.TTF",    # 楷体
+            r"C:\Windows\Fonts\msyh.ttc",    # 微软雅黑
+            r"C:\Windows\Fonts\msyh.ttf",
+            r"C:\Windows\Fonts\simhei.ttf",  # 黑体
+            r"C:\Windows\Fonts\simsun.ttc",  # 宋体集合
+            r"C:\Windows\Fonts\simsun.ttf",
+        ]
+    elif system == "linux":
+        # Linux 常见字体，优先查找楷体
+        # 首先尝试使用 fc-list 命令查找楷体字体
+        try:
+            # 优先查找楷体
+            result = subprocess.run(['fc-list', ':family=Kai', ':lang=zh'], stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True)
+            if result.returncode != 0 or not result.stdout.strip():
+                # 如果没找到 Kai，尝试楷体的其他名称
+                result = subprocess.run(['fc-list', ':family=Kaiti', ':lang=zh'], stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True)
+            if result.returncode != 0 or not result.stdout.strip():
+                # 如果没找到 Kaiti，尝试所有中文字体
+                result = subprocess.run(['fc-list', ':lang=zh'], stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True)
+                
+            if result.returncode == 0 and result.stdout.strip():
+                font_lines = result.stdout.strip().split('\n')
+                for line in font_lines:
+                    if line:
+                        parts = line.split(':')
+                        if parts and parts[0]:  # 提取字体路径
+                            font_path = parts[0].strip()
+                            if font_path and Path(font_path).exists():
+                                print(f"[INFO] 通过 fc-list 找到中文字体: {font_path}")
+                                return Path(font_path)
+        except (subprocess.SubprocessError, FileNotFoundError):
+            # 如果 fc-list 不可用，回退到硬编码路径
+            pass
+            
+        # Linux 常见字体路径，优先查找楷体
+        candidates += [
+            "/usr/share/fonts/truetype/noto/NotoSansCJK-Regular.ttc",  # 通用 CJK 字体
+            "/usr/share/fonts/truetype/wqy/wqy-zenhei.ttc",           # 文泉驿正黑（接近楷体）
+            "/usr/share/fonts/truetype/wqy/wqy-microhei.ttc",         # 文泉驿微米黑
+            "/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf",        # DejaVu 字体
+            "/usr/share/fonts/opentype/noto/NotoSansCJK-Regular.ttc", # OpenType 版本
+        ]
+        
+        # 尝试查找楷体专用字体
+        import glob
+        possible_paths = [
+            "/usr/share/fonts/**/*kai*.ttf",    # 楷体
+            "/usr/share/fonts/**/*kai*.ttc",    # 楷体
+            "/usr/share/fonts/**/*Kai*.ttf",    # 楷体
+            "/usr/share/fonts/**/*Kai*.ttc",    # 楷体
+            "/usr/share/fonts/**/*kaiti*.ttf",  # 楷体
+            "/usr/share/fonts/**/*kaiti*.ttc",  # 楷体
+            "/usr/share/fonts/**/*Kaiti*.ttf",  # 楷体
+            "/usr/share/fonts/**/*Kaiti*.ttc",  # 楷体
+            "/usr/share/fonts/**/*song*.ttf",   # 宋体
+            "/usr/share/fonts/**/*song*.ttc",   # 宋体
+            "/usr/share/fonts/**/*hei*.ttf",    # 黑体
+            "/usr/share/fonts/**/*hei*.ttc",    # 黑体
+            "/usr/share/fonts/**/*ming*.ttf",   # 明体
+            "/usr/share/fonts/**/*ming*.ttc",   # 明体
+            "/usr/share/fonts/**/*chinese*.ttf",
+            "/usr/share/fonts/**/*chinese*.ttc",
+            "/usr/share/fonts/**/*cjk*.ttf",
+            "/usr/share/fonts/**/*cjk*.ttc",
+            "/usr/share/fonts/**/*noto*.ttf",
+            "/usr/share/fonts/**/*noto*.ttc",
+        ]
+        
+        for pattern in possible_paths:
+            try:
+                matches = glob.glob(pattern, recursive=True)
+                for match in matches:
+                    if Path(match).exists():
+                        print(f"[INFO] 找到可能的中文字体: {match}")
+                        return Path(match)
+            except Exception:
+                continue
+                
+    elif system == "darwin":  # macOS
+        candidates += [
+            "/System/Library/Fonts/PingFang.ttc",          # 苹方
+            "/System/Library/Fonts/Helvetica.ttc",         # Helvetica
+            "/Library/Fonts/STKaiti.ttc",                  # 华文楷体
+            "/Library/Fonts/STHeiti Medium.ttc",           # 华文黑体
+            "/System/Library/Fonts/STHeiti Medium.ttc",    # 华文黑体
+            "/Library/Fonts/NotoSansCJK-Regular.ttc",      # Noto CJK
+        ]
+    
+    # 遍历候选路径
     for p in candidates:
         try:
             pp = Path(p)
             if pp.exists():
+                print(f"[INFO] 找到字体文件: {pp}")
                 return pp
-        except Exception:
+        except Exception as e:
+            print(f"[DEBUG] 检查字体路径失败 {p}: {e}")
             continue
+    
+    # 如果系统特定路径都没找到，尝试常见字体名称，优先楷体
+    try:
+        # 尝试使用系统字体查找功能
+        from PIL import ImageFont
+        # 尝试加载一些常见的中文字体名称，优先楷体
+        common_fonts = [
+            "Kai",                    # 楷体
+            "Kaiti",                  # 楷体
+            "KaiTi",                  # 楷体
+            "AR PL KaitiM GB",        # 楷体
+            "AR PL KaitiM Big5",      # 楷体
+            "Noto Sans CJK SC",       # 通用 CJK
+            "Noto Sans CJK TC", 
+            "Noto Sans CJK JP", 
+            "Noto Sans CJK KR", 
+            "Source Han Sans SC",     # 思源黑体
+            "Source Han Sans CN", 
+            "WenQuanYi Micro Hei",    # 文泉驿微米黑
+            "WenQuanYi Zen Hei",      # 文泉驿正黑
+            "AR PL UMing",            # 明体
+            "AR PL Sungti",           # 宋体
+            "DejaVu Sans",            # 通用字体
+            "Liberation Sans"
+        ]
+        for font_name in common_fonts:
+            try:
+                # 尝试直接使用字体名称（PIL 会自动查找系统字体）
+                font = ImageFont.truetype(font_name, 16)
+                # 如果成功加载，尝试获取一个中文字符的尺寸
+                bbox = font.getbbox("测试")  # 使用 getbbox 替代已废弃的 getsize
+                if bbox:  # 如果能成功获取边界框，说明字体有效
+                    print(f"[INFO] 通过字体名称找到字体: {font_name}")
+                    return Path(font_name)  # 返回字体名称作为路径
+            except Exception as e:
+                print(f"[DEBUG] 尝试字体名称失败 {font_name}: {e}")
+                continue
+    except Exception as e:
+        print(f"[DEBUG] 字体名称查找功能异常: {e}")
+        pass
+        
+    print("[WARNING] 未找到合适的中文字体")
     return None
 
 MEMORY_THRESHOLD = float(getattr(cfg, "MEMORY_THRESHOLD", 70.0) or 70.0)
@@ -536,7 +658,9 @@ def render_image(item: Dict[str, Any]) -> Image.Image:
         if fp and Path(fp).is_file():
             font_big = ImageFont.truetype(fp, 48)
             font_small = ImageFont.truetype(fp, 36)
-    except Exception:
+            print(f"[INFO] 使用配置文件中指定的字体: {fp}")
+    except Exception as e:
+        print(f"[WARNING] 无法加载配置文件中指定的字体: {fp}, 错误: {e}")
         font_big = None
         font_small = None
 
@@ -545,13 +669,21 @@ def render_image(item: Dict[str, Any]) -> Image.Image:
         sys_font = find_system_chinese_font()
         if sys_font:
             try:
-                font_big = ImageFont.truetype(str(sys_font), 48)
-                font_small = ImageFont.truetype(str(sys_font), 36)
+                font_path_str = str(sys_font)
+                # 检查是否是字体名称而不是路径
+                if sys_font.exists():  # 如果是实际文件路径
+                    font_big = ImageFont.truetype(font_path_str, 48)
+                    font_small = ImageFont.truetype(font_path_str, 36)
+                else:  # 如果是字体名称
+                    font_big = ImageFont.truetype(font_path_str, 48)
+                    font_small = ImageFont.truetype(font_path_str, 36)
                 print(f"[INFO] 使用系统中文字体: {sys_font}")
-            except Exception:
+            except Exception as e:
+                print(f"[WARNING] 无法加载系统字体: {sys_font}, 错误: {e}")
                 font_big = ImageFont.load_default()
                 font_small = ImageFont.load_default()
         else:
+            print("[WARNING] 未找到系统中文字体，使用默认字体")
             font_big = ImageFont.load_default()
             font_small = ImageFont.load_default()
 
@@ -561,7 +693,10 @@ def render_image(item: Dict[str, Any]) -> Image.Image:
     y = text_area_top
     if side_text:
         lines = wrap_text_chinese(draw, side_text, font_big, text_width, max_lines=2)
-        line_height = int(font_big.size * 1.15)
+        if hasattr(font_big, 'size'):
+            line_height = int(font_big.size * 1.15)
+        else:
+            line_height = 48 * 1.15  # 默认行高
         for line in lines:
             draw.text((padding_x, y), line, font=font_big, fill=(0, 0, 0))
             y += line_height
@@ -570,10 +705,23 @@ def render_image(item: Dict[str, Any]) -> Image.Image:
     date_display = format_date_display(item["date"])
     loc_display = format_location(item.get("lat"), item.get("lon"), item.get("city") or "")
 
-    second_line_y = canvas_h - int(font_small.size * 1.2) - 12
+    if hasattr(font_small, 'size'):
+        second_line_y = canvas_h - int(font_small.size * 1.2) - 12
+    else:
+        second_line_y = canvas_h - int(36 * 1.2) - 12  # 默认字体大小
     draw.text((padding_x, second_line_y), date_display, font=font_small, fill=(0, 0, 0))
 
-    loc_w = draw.textlength(loc_display, font=font_small)
+    try:
+        loc_w = draw.textlength(loc_display, font=font_small)
+    except AttributeError:
+        # 如果 PIL 版本较低，没有 textlength 方法，使用 textbbox 代替
+        try:
+            bbox = draw.textbbox((0, 0), loc_display, font=font_small)
+            loc_w = bbox[2] - bbox[0]
+        except:
+            # 如果也没有 textbbox 方法，使用估算
+            loc_w = len(loc_display) * 20  # 估算宽度
+
     loc_x = padding_x + text_width - loc_w
     if loc_x < padding_x:
         loc_x = padding_x

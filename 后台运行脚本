@@ -1,0 +1,6 @@
+# 激活虚拟环境后运行
+cd /vol1/1000/docker/photodaocker/
+source venv/bin/activate
+
+# 后台运行并记录日志（日志保存到 server.log，错误输出也重定向）
+nohup python server.py > server.log 2>&1 &

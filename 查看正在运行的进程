@@ -1,0 +1,1 @@
+ps aux | grep server.py  # 直接查找server.py进程

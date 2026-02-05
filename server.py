@@ -4,6 +4,7 @@
 from __future__ import annotations
 
 from pathlib import Path
+import os
 from flask import Flask, abort, send_file, Response, request, redirect
 import mimetypes
 import sqlite3
@@ -134,7 +135,9 @@ def _make_image_url(path_str: str) -> str:
     try:
         p = Path(path_str).expanduser().resolve()
         rel = p.relative_to(IMAGE_DIR.resolve())
-        return "/images/" + str(rel).replace("\\", "/")
+        # 使用 os.path.normpath 确保跨平台兼容性，然后替换为正斜杠
+        normalized_rel = os.path.normpath(str(rel))
+        return "/images/" + normalized_rel.replace("\\", "/")
     except Exception:
         return ""
 
@@ -2236,6 +2239,32 @@ def images(subpath: str):
     except Exception:
         abort(400)
     return _send_static_file(p)
+
+
+@app.route('/favicon.ico')
+def favicon():
+    # 返回一个简单的 16x16 像素透明图标，避免 404 错误
+    from flask import make_response
+    import base64
+    
+    # 一个简单的 16x16 像素透明 ICO 图标的 base64 编码
+    transparent_ico_base64 = (
+        "AAABAAEAEBAAAAAAAABoBQAAFgAAACgAAAAQAAAAIAAAAAEACAAAAAAAAAEAAAAAAAAAAAAAAAEA"
+        "AAAAAAAAAAAAAP///wD///8A////AP///wD///8A////AP///wD///8A////AP///wD///8A////"
+        "AP///wD///8A////AP///wD///8A////AP///wD///8A////AP///wD///8A////AP///wD///8A"
+        "////AP///wD///8A////AP///wD///8A////AP///wD///8A////AP///wD///8A////AP///wD/"
+        "///8="
+    )
+    
+    try:
+        icon_data = base64.b64decode(transparent_ico_base64)
+        response = make_response(icon_data)
+        response.headers['Content-Type'] = 'image/x-icon'
+        response.headers['Cache-Control'] = 'public, max-age=86400'  # 缓存一天
+        return response
+    except Exception:
+        # 如果解码失败，返回空响应
+        abort(404)
 
 @app.get("/sim_render")
 def sim_render():
